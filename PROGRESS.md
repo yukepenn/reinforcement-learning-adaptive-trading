@@ -1,0 +1,1 @@
+- [2024-05-23] Created all required project directories and subfolders for RL trading project scaffolding 

@@ -1,0 +1,48 @@
+# Data configuration
+data:
+  raw_path: "data/raw/price_data.csv"
+  processed_path: "data/processed/"
+  train_ratio: 0.8
+  test_ratio: 0.2
+
+# Environment configuration
+environment:
+  initial_cash: 100000.0
+  transaction_cost: 0.001  # 0.1% per trade
+  window_size: 20  # Number of time steps to include in observation
+  position_limit: 1  # Maximum position size (in units)
+  reward_scaling: 1.0
+
+# Feature engineering
+features:
+  technical_indicators:
+    - "sma"  # Simple Moving Average
+    - "ema"  # Exponential Moving Average
+    - "rsi"  # Relative Strength Index
+    - "macd"  # Moving Average Convergence Divergence
+    - "bollinger"  # Bollinger Bands
+  lookback_periods: [5, 10, 20, 50]
+  normalize: true
+
+# Training configuration
+training:
+  total_timesteps: 1000000
+  seed: 42
+  ppo_params:
+    learning_rate: 0.0003
+    n_steps: 2048
+    batch_size: 64
+    n_epochs: 10
+    gamma: 0.99
+    gae_lambda: 0.95
+    clip_range: 0.2
+    ent_coef: 0.01
+    vf_coef: 0.5
+    max_grad_norm: 0.5
+
+# Logging configuration
+logging:
+  log_dir: "logs/"
+  tensorboard_dir: "logs/tensorboard/"
+  save_freq: 10000  # Save model every N steps
+  eval_freq: 10000  # Evaluate every N steps 
