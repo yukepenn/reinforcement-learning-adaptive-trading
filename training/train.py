@@ -30,7 +30,15 @@ def main():
     os.makedirs(config['logging']['tensorboard_dir'], exist_ok=True)
     
     # Load and prepare data
-    train_prices, train_features, test_prices, test_features = data_utils.prepare_training_data(config)
+    train_prices, train_features, test_prices, test_features, scaler = data_utils.prepare_training_data(config)
+    
+    # Save processed data
+    data_utils.save_processed_data(
+        features=train_features,
+        prices=train_prices,
+        scaler=scaler,
+        save_dir=config['data']['processed_data_path']
+    )
     
     # Create training environment
     train_env = TradingEnv(

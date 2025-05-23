@@ -30,39 +30,61 @@ def load_config(config_path: str) -> Dict[str, Any]:
             
     return config
 
-def validate_config(config: Dict[str, Any]) -> bool:
+def validate_config(config: Dict[str, Any]) -> None:
     """
-    Validate configuration dictionary has required fields.
+    Validate configuration dictionary.
     
     Args:
-        config: Configuration dictionary to validate
+        config: Configuration dictionary
         
-    Returns:
-        True if valid, raises ValueError if invalid
+    Raises:
+        ValueError: If required fields are missing or invalid
     """
+    # Required sections
     required_sections = ['data', 'environment', 'features', 'training', 'logging']
-    
     for section in required_sections:
         if section not in config:
-            raise ValueError(f"Missing required section '{section}' in config")
-            
-    # Validate data section
-    data_required = ['raw_path', 'processed_path', 'train_ratio', 'test_ratio']
-    for field in data_required:
+            raise ValueError(f"Missing required section '{section}'")
+    
+    # Data section
+    required_data_fields = ['symbol', 'start_date', 'end_date', 'train_ratio', 'raw_data_path', 'processed_data_path']
+    for field in required_data_fields:
         if field not in config['data']:
             raise ValueError(f"Missing required field '{field}' in data section")
-            
-    # Validate environment section
-    env_required = ['initial_cash', 'transaction_cost', 'window_size', 'position_limit']
-    for field in env_required:
+    
+    # Environment section
+    required_env_fields = ['initial_cash', 'transaction_cost', 'position_limit', 'window_size', 'reward_scaling']
+    for field in required_env_fields:
         if field not in config['environment']:
             raise ValueError(f"Missing required field '{field}' in environment section")
-            
-    # Validate training section
-    if 'ppo_params' not in config['training']:
-        raise ValueError("Missing 'ppo_params' in training section")
-        
-    return True
+    
+    # Features section
+    if 'technical_indicators' not in config['features']:
+        raise ValueError("Missing 'technical_indicators' in features section")
+    if 'lookback_periods' not in config['features']:
+        raise ValueError("Missing 'lookback_periods' in features section")
+    
+    # Training section
+    required_training_fields = ['total_timesteps', 'seed', 'ppo_params']
+    for field in required_training_fields:
+        if field not in config['training']:
+            raise ValueError(f"Missing required field '{field}' in training section")
+    
+    # PPO parameters
+    required_ppo_fields = [
+        'learning_rate', 'n_steps', 'batch_size', 'n_epochs',
+        'gamma', 'gae_lambda', 'clip_range', 'ent_coef',
+        'vf_coef', 'max_grad_norm'
+    ]
+    for field in required_ppo_fields:
+        if field not in config['training']['ppo_params']:
+            raise ValueError(f"Missing required field '{field}' in PPO parameters")
+    
+    # Logging section
+    required_logging_fields = ['log_dir', 'tensorboard_dir', 'eval_freq', 'n_eval_episodes', 'save_freq']
+    for field in required_logging_fields:
+        if field not in config['logging']:
+            raise ValueError(f"Missing required field '{field}' in logging section")
 
 def get_config(config_path: str) -> Dict[str, Any]:
     """

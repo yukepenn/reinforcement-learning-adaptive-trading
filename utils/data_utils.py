@@ -9,6 +9,7 @@ from sklearn.preprocessing import StandardScaler
 import yfinance as yf
 from datetime import datetime, timedelta
 import logging
+from features import feature_engineering
 
 logger = logging.getLogger(__name__)
 
@@ -196,6 +197,39 @@ def download_yahoo_data(symbol: str, start_date: str, end_date: str = None) -> p
         logger.error(f"Error downloading data: {str(e)}")
         raise
 
+def load_data(filepath: str) -> pd.DataFrame:
+    """
+    Load data from CSV file.
+    
+    Args:
+        filepath (str): Path to the data file
+    
+    Returns:
+        pd.DataFrame: Loaded data
+    """
+    try:
+        # Try to load with Date as index first
+        try:
+            data = pd.read_csv(filepath, index_col='Date', parse_dates=True)
+        except ValueError:
+            # If Date column not found, try loading with default index
+            data = pd.read_csv(filepath)
+            # Convert the first column to datetime if it's not already
+            if not isinstance(data.index, pd.DatetimeIndex):
+                data.index = pd.to_datetime(data.index)
+        
+        # Convert numeric columns to float
+        numeric_columns = ['Open', 'High', 'Low', 'Close', 'Volume']
+        for col in numeric_columns:
+            if col in data.columns:
+                data[col] = pd.to_numeric(data[col], errors='coerce')
+        
+        logger.info(f"Loaded data from {filepath}")
+        return data
+    except Exception as e:
+        logger.error(f"Error loading data: {str(e)}")
+        raise
+
 def preprocess_data(data: pd.DataFrame, train_ratio: float = 0.8) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
     Preprocess the data and split into training and testing sets.
@@ -209,8 +243,8 @@ def preprocess_data(data: pd.DataFrame, train_ratio: float = 0.8) -> Tuple[pd.Da
     """
     try:
         # Handle missing values
-        data = data.fillna(method='ffill')  # Forward fill
-        data = data.fillna(method='bfill')  # Backward fill any remaining NaNs
+        data = data.ffill()  # Forward fill
+        data = data.bfill()  # Backward fill any remaining NaNs
         
         # Calculate daily returns
         data['Returns'] = data['Close'].pct_change()
@@ -244,25 +278,7 @@ def save_data(data: pd.DataFrame, filepath: str) -> None:
         logger.error(f"Error saving data: {str(e)}")
         raise
 
-def load_data(filepath: str) -> pd.DataFrame:
-    """
-    Load data from CSV file.
-    
-    Args:
-        filepath (str): Path to the data file
-    
-    Returns:
-        pd.DataFrame: Loaded data
-    """
-    try:
-        data = pd.read_csv(filepath, index_col='Date', parse_dates=True)
-        logger.info(f"Loaded data from {filepath}")
-        return data
-    except Exception as e:
-        logger.error(f"Error loading data: {str(e)}")
-        raise
-
-def prepare_training_data(config: Dict[str, Any]) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+def prepare_training_data(config: Dict[str, Any]) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, StandardScaler]:
     """
     Prepare data for training and testing.
     
@@ -270,8 +286,8 @@ def prepare_training_data(config: Dict[str, Any]) -> Tuple[np.ndarray, np.ndarra
         config (Dict[str, Any]): Configuration dictionary
     
     Returns:
-        Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]: 
-            train_prices, train_features, test_prices, test_features
+        Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, StandardScaler]: 
+            train_prices, train_features, test_prices, test_features, scaler
     """
     try:
         # Get data paths from config
@@ -299,13 +315,23 @@ def prepare_training_data(config: Dict[str, Any]) -> Tuple[np.ndarray, np.ndarra
         save_data(train_data, os.path.join(processed_data_path, 'train.csv'))
         save_data(test_data, os.path.join(processed_data_path, 'test.csv'))
         
-        # Convert to numpy arrays
+        # Create features
+        train_features = feature_engineering.create_feature_matrix(train_data, config)
+        test_features = feature_engineering.create_feature_matrix(test_data, config)
+        
+        # Scale features
+        scaler = StandardScaler()
+        train_features = scaler.fit_transform(train_features)
+        test_features = scaler.transform(test_features)
+        
+        # Convert prices to numpy arrays
         train_prices = train_data['Close'].values
         test_prices = test_data['Close'].values
         
-        # Note: Features will be computed in feature_engineering.py
-        # For now, return None for features
-        return train_prices, None, test_prices, None
+        logger.info(f"Prepared training data with shapes: prices={train_prices.shape}, features={train_features.shape}")
+        logger.info(f"Prepared testing data with shapes: prices={test_prices.shape}, features={test_features.shape}")
+        
+        return train_prices, train_features, test_prices, test_features, scaler
         
     except Exception as e:
         logger.error(f"Error preparing training data: {str(e)}")

@@ -162,7 +162,8 @@ class TradingEnv(gym.Env):
             'cash': self.cash,
             'position': self.position,
             'portfolio_value': self.portfolio_value,
-            'trades': self.trades
+            'trades': self.trades,
+            'trade': self.position
         }
         
     def render(self, mode: str = 'human') -> None:
