@@ -8,6 +8,10 @@ import ta
 from ta.trend import SMAIndicator, EMAIndicator, MACD
 from ta.momentum import RSIIndicator
 from ta.volatility import BollingerBands
+from sklearn.preprocessing import StandardScaler
+import logging
+
+logger = logging.getLogger(__name__)
 
 def compute_technical_indicators(
     df: pd.DataFrame,
@@ -97,6 +101,50 @@ def compute_price_features(df: pd.DataFrame) -> pd.DataFrame:
     
     return result_df
 
+def compute_sma(data: pd.DataFrame, window: int) -> pd.Series:
+    """Compute Simple Moving Average."""
+    return data['Close'].rolling(window=window).mean()
+
+def compute_ema(data: pd.DataFrame, window: int) -> pd.Series:
+    """Compute Exponential Moving Average."""
+    return data['Close'].ewm(span=window, adjust=False).mean()
+
+def compute_rsi(data: pd.DataFrame, window: int = 14) -> pd.Series:
+    """Compute Relative Strength Index."""
+    delta = data['Close'].diff()
+    gain = (delta.where(delta > 0, 0)).rolling(window=window).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window=window).mean()
+    rs = gain / loss
+    return 100 - (100 / (1 + rs))
+
+def compute_macd(data: pd.DataFrame, fast: int = 12, slow: int = 26, signal: int = 9) -> Tuple[pd.Series, pd.Series, pd.Series]:
+    """Compute MACD, Signal line, and MACD histogram."""
+    exp1 = data['Close'].ewm(span=fast, adjust=False).mean()
+    exp2 = data['Close'].ewm(span=slow, adjust=False).mean()
+    macd = exp1 - exp2
+    signal_line = macd.ewm(span=signal, adjust=False).mean()
+    histogram = macd - signal_line
+    return macd, signal_line, histogram
+
+def compute_bollinger_bands(data: pd.DataFrame, window: int = 20, num_std: float = 2.0) -> Tuple[pd.Series, pd.Series, pd.Series]:
+    """Compute Bollinger Bands."""
+    sma = compute_sma(data, window)
+    std = data['Close'].rolling(window=window).std()
+    upper_band = sma + (std * num_std)
+    lower_band = sma - (std * num_std)
+    return upper_band, sma, lower_band
+
+def compute_volatility(data: pd.DataFrame, window: int = 20) -> pd.Series:
+    """Compute rolling volatility."""
+    returns = data['Close'].pct_change()
+    return returns.rolling(window=window).std()
+
+def compute_drawdown(data: pd.DataFrame, window: int = 252) -> pd.Series:
+    """Compute rolling drawdown."""
+    rolling_max = data['Close'].rolling(window=window, min_periods=1).max()
+    drawdown = (data['Close'] - rolling_max) / rolling_max
+    return drawdown
+
 def create_feature_matrix(
     df: pd.DataFrame,
     window_size: int,
@@ -163,12 +211,111 @@ def normalize_features(
     Returns:
         Tuple of (normalized_features, scaler)
     """
-    from sklearn.preprocessing import StandardScaler
-    
     if scaler is None:
         scaler = StandardScaler()
         normalized_features = scaler.fit_transform(features)
     else:
         normalized_features = scaler.transform(features)
     
-    return normalized_features, scaler 
+    return normalized_features, scaler
+
+def create_feature_matrix(data: pd.DataFrame, config: Dict[str, Any]) -> np.ndarray:
+    """
+    Create a feature matrix from the price data.
+    
+    Args:
+        data (pd.DataFrame): Price data
+        config (Dict[str, Any]): Configuration dictionary
+    
+    Returns:
+        np.ndarray: Feature matrix of shape (n_samples, n_features)
+    """
+    try:
+        features = []
+        feature_names = []
+        
+        # Add price and returns
+        features.append(data['Close'].values)
+        feature_names.append('close')
+        features.append(data['Returns'].values)
+        feature_names.append('returns')
+        
+        # Add SMAs
+        for window in config['features']['lookback_periods']:
+            sma = compute_sma(data, window)
+            features.append(sma.values)
+            feature_names.append(f'sma_{window}')
+        
+        # Add EMAs
+        for window in config['features']['lookback_periods']:
+            ema = compute_ema(data, window)
+            features.append(ema.values)
+            feature_names.append(f'ema_{window}')
+        
+        # Add RSI
+        rsi = compute_rsi(data)
+        features.append(rsi.values)
+        feature_names.append('rsi')
+        
+        # Add MACD
+        macd, signal, hist = compute_macd(data)
+        features.extend([macd.values, signal.values, hist.values])
+        feature_names.extend(['macd', 'macd_signal', 'macd_hist'])
+        
+        # Add Bollinger Bands
+        upper, middle, lower = compute_bollinger_bands(data)
+        features.extend([upper.values, middle.values, lower.values])
+        feature_names.extend(['bb_upper', 'bb_middle', 'bb_lower'])
+        
+        # Add volatility
+        vol = compute_volatility(data)
+        features.append(vol.values)
+        feature_names.append('volatility')
+        
+        # Add drawdown
+        dd = compute_drawdown(data)
+        features.append(dd.values)
+        feature_names.append('drawdown')
+        
+        # Stack features
+        feature_matrix = np.column_stack(features)
+        
+        # Handle NaN values
+        feature_matrix = np.nan_to_num(feature_matrix, nan=0.0)
+        
+        # Normalize if specified
+        if config['data']['normalize']:
+            scaler = StandardScaler()
+            feature_matrix = scaler.fit_transform(feature_matrix)
+        
+        logger.info(f"Created feature matrix with shape {feature_matrix.shape}")
+        logger.info(f"Feature names: {feature_names}")
+        
+        return feature_matrix
+        
+    except Exception as e:
+        logger.error(f"Error creating feature matrix: {str(e)}")
+        raise
+
+def prepare_features(train_data: pd.DataFrame, test_data: pd.DataFrame, config: Dict[str, Any]) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Prepare features for both training and testing data.
+    
+    Args:
+        train_data (pd.DataFrame): Training data
+        test_data (pd.DataFrame): Testing data
+        config (Dict[str, Any]): Configuration dictionary
+    
+    Returns:
+        Tuple[np.ndarray, np.ndarray]: Training and testing feature matrices
+    """
+    try:
+        # Create feature matrices
+        train_features = create_feature_matrix(train_data, config)
+        test_features = create_feature_matrix(test_data, config)
+        
+        return train_features, test_features
+        
+    except Exception as e:
+        logger.error(f"Error preparing features: {str(e)}")
+        raise 

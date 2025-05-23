@@ -1,16 +1,19 @@
 # Data configuration
 data:
-  raw_path: "data/raw/price_data.csv"
-  processed_path: "data/processed/"
+  symbol: 'ZN=F'  # 10-year Treasury futures
+  start_date: '2010-01-01'
+  end_date: '2024-12-31'
   train_ratio: 0.8
-  test_ratio: 0.2
+  raw_data_path: 'data/raw/price_data.csv'
+  processed_data_path: 'data/processed/'
+  normalize: true
 
 # Environment configuration
 environment:
-  initial_cash: 100000.0
-  transaction_cost: 0.001  # 0.1% per trade
-  window_size: 20  # Number of time steps to include in observation
-  position_limit: 1  # Maximum position size (in units)
+  initial_cash: 100000
+  transaction_cost: 0.001
+  position_limit: 1
+  window_size: 20
   reward_scaling: 1.0
 
 # Feature engineering
@@ -22,11 +25,10 @@ features:
     - "macd"  # Moving Average Convergence Divergence
     - "bollinger"  # Bollinger Bands
   lookback_periods: [5, 10, 20, 50]
-  normalize: true
 
 # Training configuration
 training:
-  total_timesteps: 1000000
+  total_timesteps: 100000
   seed: 42
   ppo_params:
     learning_rate: 0.0003
@@ -42,7 +44,8 @@ training:
 
 # Logging configuration
 logging:
-  log_dir: "logs/"
-  tensorboard_dir: "logs/tensorboard/"
-  save_freq: 10000  # Save model every N steps
-  eval_freq: 10000  # Evaluate every N steps 
+  log_dir: 'logs/training'
+  tensorboard_dir: 'logs/tensorboard'
+  eval_freq: 10000
+  n_eval_episodes: 5
+  save_freq: 50000 

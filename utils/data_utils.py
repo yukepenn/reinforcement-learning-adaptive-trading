@@ -4,8 +4,13 @@ Data loading and preprocessing utilities.
 import os
 import pandas as pd
 import numpy as np
-from typing import Tuple, Optional
+from typing import Tuple, Optional, Dict, Any
 from sklearn.preprocessing import StandardScaler
+import yfinance as yf
+from datetime import datetime, timedelta
+import logging
+
+logger = logging.getLogger(__name__)
 
 def load_data(file_path: str) -> pd.DataFrame:
     """
@@ -151,4 +156,157 @@ def load_processed_data(save_dir: str) -> Tuple[np.ndarray, np.ndarray, Standard
     import joblib
     scaler = joblib.load(os.path.join(save_dir, 'scaler.joblib'))
     
-    return features, prices, scaler 
+    return features, prices, scaler
+
+def download_yahoo_data(symbol: str, start_date: str, end_date: str = None) -> pd.DataFrame:
+    """
+    Download historical price data from Yahoo Finance.
+    
+    Args:
+        symbol (str): Stock symbol (e.g., 'ZN=F' for 10-year Treasury futures)
+        start_date (str): Start date in 'YYYY-MM-DD' format
+        end_date (str, optional): End date in 'YYYY-MM-DD' format. Defaults to today.
+    
+    Returns:
+        pd.DataFrame: DataFrame with OHLCV data
+    """
+    try:
+        if end_date is None:
+            end_date = datetime.now().strftime('%Y-%m-%d')
+            
+        logger.info(f"Downloading {symbol} data from {start_date} to {end_date}")
+        data = yf.download(symbol, start=start_date, end=end_date)
+        
+        if data.empty:
+            raise ValueError(f"No data downloaded for {symbol}")
+            
+        # Ensure all required columns are present
+        required_columns = ['Open', 'High', 'Low', 'Close', 'Volume']
+        if not all(col in data.columns for col in required_columns):
+            raise ValueError(f"Missing required columns in downloaded data")
+            
+        # Sort by date and reset index
+        data = data.sort_index()
+        data.index.name = 'Date'
+        
+        logger.info(f"Successfully downloaded {len(data)} days of data")
+        return data
+        
+    except Exception as e:
+        logger.error(f"Error downloading data: {str(e)}")
+        raise
+
+def preprocess_data(data: pd.DataFrame, train_ratio: float = 0.8) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    Preprocess the data and split into training and testing sets.
+    
+    Args:
+        data (pd.DataFrame): Raw price data
+        train_ratio (float): Ratio of data to use for training (default: 0.8)
+    
+    Returns:
+        Tuple[pd.DataFrame, pd.DataFrame]: Training and testing DataFrames
+    """
+    try:
+        # Handle missing values
+        data = data.fillna(method='ffill')  # Forward fill
+        data = data.fillna(method='bfill')  # Backward fill any remaining NaNs
+        
+        # Calculate daily returns
+        data['Returns'] = data['Close'].pct_change()
+        
+        # Split data
+        split_idx = int(len(data) * train_ratio)
+        train_data = data.iloc[:split_idx]
+        test_data = data.iloc[split_idx:]
+        
+        logger.info(f"Split data into {len(train_data)} training and {len(test_data)} testing samples")
+        
+        return train_data, test_data
+        
+    except Exception as e:
+        logger.error(f"Error preprocessing data: {str(e)}")
+        raise
+
+def save_data(data: pd.DataFrame, filepath: str) -> None:
+    """
+    Save DataFrame to CSV file.
+    
+    Args:
+        data (pd.DataFrame): Data to save
+        filepath (str): Path to save the data
+    """
+    try:
+        os.makedirs(os.path.dirname(filepath), exist_ok=True)
+        data.to_csv(filepath)
+        logger.info(f"Saved data to {filepath}")
+    except Exception as e:
+        logger.error(f"Error saving data: {str(e)}")
+        raise
+
+def load_data(filepath: str) -> pd.DataFrame:
+    """
+    Load data from CSV file.
+    
+    Args:
+        filepath (str): Path to the data file
+    
+    Returns:
+        pd.DataFrame: Loaded data
+    """
+    try:
+        data = pd.read_csv(filepath, index_col='Date', parse_dates=True)
+        logger.info(f"Loaded data from {filepath}")
+        return data
+    except Exception as e:
+        logger.error(f"Error loading data: {str(e)}")
+        raise
+
+def prepare_training_data(config: Dict[str, Any]) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Prepare data for training and testing.
+    
+    Args:
+        config (Dict[str, Any]): Configuration dictionary
+    
+    Returns:
+        Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]: 
+            train_prices, train_features, test_prices, test_features
+    """
+    try:
+        # Get data paths from config
+        raw_data_path = config['data']['raw_data_path']
+        processed_data_path = config['data']['processed_data_path']
+        
+        # Download data if not exists
+        if not os.path.exists(raw_data_path):
+            data = download_yahoo_data(
+                symbol=config['data']['symbol'],
+                start_date=config['data']['start_date'],
+                end_date=config['data']['end_date']
+            )
+            save_data(data, raw_data_path)
+        else:
+            data = load_data(raw_data_path)
+        
+        # Preprocess and split data
+        train_data, test_data = preprocess_data(
+            data, 
+            train_ratio=config['data']['train_ratio']
+        )
+        
+        # Save processed data
+        save_data(train_data, os.path.join(processed_data_path, 'train.csv'))
+        save_data(test_data, os.path.join(processed_data_path, 'test.csv'))
+        
+        # Convert to numpy arrays
+        train_prices = train_data['Close'].values
+        test_prices = test_data['Close'].values
+        
+        # Note: Features will be computed in feature_engineering.py
+        # For now, return None for features
+        return train_prices, None, test_prices, None
+        
+    except Exception as e:
+        logger.error(f"Error preparing training data: {str(e)}")
+        raise 
